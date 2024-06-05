@@ -70,6 +70,16 @@ public class Time {
     }
 
     /**
+     *  Calculates number of milliseconds from passed argument
+     * @param days Time in days
+     * @return Time in milliseconds
+     */
+
+    public static long daysToMillis(int days) {
+        return (long) days * 24 * 60 * 60 * 1000;
+    }
+
+    /**
      * @return Time offset in seconds that will be added to {@link #currentTime()} and {@link #currentTimeMillis()}.
      */
     public static int getOffset() {
