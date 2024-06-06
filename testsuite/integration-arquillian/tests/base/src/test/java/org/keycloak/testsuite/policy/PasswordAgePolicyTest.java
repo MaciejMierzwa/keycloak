@@ -12,9 +12,6 @@ import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.AbstractAuthTest;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.function.Consumer;
 
 import static org.keycloak.representations.idm.CredentialRepresentation.PASSWORD;
@@ -32,12 +29,27 @@ public class PasswordAgePolicyTest extends AbstractAuthTest {
         testRealmResource().update(testRealmRepresentation);
     }
 
+    private void setPasswordHistory(String passwordHistory) {
+        log.info(String.format("Setting %s", passwordHistory));
+        RealmRepresentation testRealmRepresentation = testRealmResource().toRepresentation();
+        testRealmRepresentation.setPasswordPolicy(passwordHistory);
+        testRealmResource().update(testRealmRepresentation);
+    }
+
     private void setPasswordAgePolicyValue(String value) {
         setPasswordAgePolicy(String.format("passwordAge(%s)", value));
     }
 
     private void setPasswordAgePolicyValue(int value) {
         setPasswordAgePolicyValue(String.valueOf(value));
+    }
+
+    private void setPasswordHistoryValue(String value) {
+        setPasswordHistory(String.format("passwordHistory(%s)", value));
+    }
+
+    private void setPasswordHistoryValue(int value) {
+        setPasswordHistoryValue(String.valueOf(value));
     }
 
     public UserRepresentation createUserRepresentation(String username) {
@@ -71,6 +83,10 @@ public class PasswordAgePolicyTest extends AbstractAuthTest {
         } catch (BadRequestException bre) {
             log.info("An expected BadRequestException was caught.");
         }
+    }
+
+    static private int daysToSeconds(int days) {
+        return days * 24 * 60 * 60;
     }
 
     @Before
@@ -157,4 +173,73 @@ public class PasswordAgePolicyTest extends AbstractAuthTest {
         Time.setOffset(0);
         resetUserPassword(user, "secret");
     }
+
+
+    @Test
+    public void testPasswordAge0Days() {
+        setPasswordAgePolicyValue(0);
+
+        resetUserPassword(user, "secret");
+        //can't set the same password
+        expectBadRequestException(f -> resetUserPassword(user, "secret"));
+        resetUserPassword(user, "secret1");
+        resetUserPassword(user, "secret");
+    }
+
+    @Test
+    public void testPasswordAgeSetToNegative() {
+        setPasswordAgePolicyValue(-1);
+
+        resetUserPassword(user, "secret");
+        //no check is performed
+        setPasswordAgePolicyValue(10);
+        resetUserPassword(user, "secret1");
+        resetUserPassword(user, "secret2");
+        resetUserPassword(user, "secret3");
+        setPasswordAgePolicyValue(-2);
+        //no check is performed
+        resetUserPassword(user, "secret");
+        resetUserPassword(user, "secret1");
+        setPasswordAgePolicyValue(-3);
+    }
+
+    @Test
+    public void testPasswordAgeSetToInvalid() {
+        expectBadRequestException(f -> setPasswordAgePolicyValue("abc"));
+        expectBadRequestException(f -> setPasswordAgePolicyValue("2a"));
+        expectBadRequestException(f -> setPasswordAgePolicyValue("asda2"));
+    }
+
+    @Test
+    public void testBothPasswordHistoryPoliciesPasswordHistoryPolicyTakesOver() {
+        //1 day
+        setPasswordAgePolicyValue(1);
+        //last 3 passwords
+        setPasswordHistoryValue(3);
+        Time.setOffset(daysToSeconds(-2));
+        resetUserPassword(user, "secret");
+        resetUserPassword(user, "secret1");
+        resetUserPassword(user, "secret2");
+
+        Time.setOffset(daysToSeconds(0));
+        //password history takes precedence
+        expectBadRequestException(f -> setPasswordAgePolicyValue("secret"));
+    }
+
+    @Test
+    public void testBothPasswordHistoryPoliciesPasswordAgePolicyTakesOver() {
+        //2 days
+        setPasswordAgePolicyValue(2);
+        //last 10 passwords
+        setPasswordHistoryValue(10);
+        Time.setOffset(daysToSeconds(-1));
+        resetUserPassword(user, "secret");
+        resetUserPassword(user, "secret1");
+        resetUserPassword(user, "secret2");
+
+        Time.setOffset(daysToSeconds(0));
+        //password age takes precedence
+        expectBadRequestException(f -> setPasswordAgePolicyValue("secret"));
+    }
+
 }
